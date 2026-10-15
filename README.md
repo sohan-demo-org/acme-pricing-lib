@@ -29,20 +29,25 @@ discounts, regional sales tax — depends on this library instead of re-implemen
 | [acme-checkout-service](https://github.com/sohan-demo-org/acme-checkout-service) | Spring Boot REST API that prices carts at checkout | `<pricing.version>` in its `pom.xml` |
 | [acme-invoicing-worker](https://github.com/sohan-demo-org/acme-invoicing-worker) | Plain-Java batch worker that invoices fulfilled orders | `<pricing.version>` in its `pom.xml` |
 
-## API (1.x)
+## API (2.x)
 
 ```java
 PricingEngine engine = new PricingEngine();
-List<LineItem> items = List.of(new LineItem("SKU-1", new BigDecimal("19.99"), 2));
+List<LineItem> items = List.of(new LineItem("SKU-1", new BigDecimal("19.99"), "USD", 2));
 
-BigDecimal subtotal = engine.subtotal(items);                                  // 39.98
-BigDecimal total    = engine.calculateTotal(items,
-                          TaxRules.rateFor("US-CA"),                           // 7.25 %
-                          DiscountCode.percent("WELCOME10", BigDecimal.TEN));  // 38.59
+PriceBreakdown b = engine.calculateTotal(items,
+                       TaxRules.rateFor("US-CA"),                           // 7.25 %
+                       DiscountCode.percent("WELCOME10", BigDecimal.TEN));  // 10 % off
+b.subtotal();   // 39.98
+b.discount();   // 4.00
+b.tax();        // 2.61
+b.total();      // 38.59  (same number 1.x returned)
 ```
 
-- `PricingEngine` — `subtotal`, `applyDiscount`, `calculateTotal` (discount first, then tax, HALF_UP to cents)
-- `LineItem` — sku, unit price, quantity (validated)
+- `PricingEngine` — `subtotal`, `calculateTotal` → `PriceBreakdown` (discount first, then tax, HALF_UP to cents); rejects empty and mixed-currency orders
+- `PriceBreakdown` — `currency`, `subtotal`, `discount`, `tax`, `total`
+- `DiscountPolicy` — `reductionFor(amount, code)`, `apply(amount, code)` (replaces `PricingEngine.applyDiscount`)
+- `LineItem` — sku, unit price, ISO 4217 currency, quantity (validated)
 - `DiscountCode` — `percent(code, pct)` or `fixed(code, amount)`
 - `TaxRules` — region → tax rate (`US-CA`, `US-NY`, `US-TX`, `US-OR`, `GB`, `DE`)
 
@@ -61,7 +66,7 @@ See [CHANGELOG.md](CHANGELOG.md) for version history and migration notes.
 <dependency>
   <groupId>com.acme</groupId>
   <artifactId>pricing</artifactId>
-  <version>1.0.0</version>
+  <version>2.0.0</version>
 </dependency>
 ```
 
