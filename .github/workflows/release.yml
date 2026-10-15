@@ -1,0 +1,118 @@
+name: Release
+
+# Fires when a GitHub Release is published (the "real" path), and can also be
+# run by hand from the Actions tab to replay a release on a demo call.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to (re)publish and announce, e.g. 2.0.0"
+        required: true
+      previous_version:
+        description: "Version consumers are on today, e.g. 1.0.0"
+        required: true
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish-and-notify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+
+      - name: Resolve version
+        id: ver
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          TAG: ${{ github.event.release.tag_name }}
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_PREVIOUS: ${{ inputs.previous_version }}
+        run: |
+          if [ "$EVENT_NAME" = "release" ]; then
+            VERSION="${TAG#v}"
+            PREVIOUS="$(git ls-remote --tags origin 'v*' | awk -F/ '{print $3}' | sed 's/^v//' | grep -v "^${VERSION}$" | sort -V | tail -1)"
+          else
+            VERSION="${INPUT_VERSION#v}"
+            PREVIOUS="${INPUT_PREVIOUS#v}"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "previous=${PREVIOUS:-unknown}" >> "$GITHUB_OUTPUT"
+          echo "Publishing $VERSION (previous: ${PREVIOUS:-unknown})"
+
+      - name: Set pom version
+        run: mvn -B -q versions:set -DnewVersion="${{ steps.ver.outputs.version }}" -DgenerateBackupPoms=false
+
+      - name: Build and test
+        run: mvn -B verify
+
+      - name: Publish to GitHub Packages (skips if this version already exists)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          URL="https://maven.pkg.github.com/${GITHUB_REPOSITORY}/com/acme/pricing/${VERSION}/pricing-${VERSION}.pom"
+          STATUS=$(curl -s -o /dev/null -w '%{http_code}' -u "x:${GITHUB_TOKEN}" "$URL")
+          if [ "$STATUS" = "200" ]; then
+            echo "com.acme:pricing:${VERSION} already published; skipping deploy"
+          else
+            mvn -B -DskipTests deploy
+          fi
+
+      - name: Collect release notes
+        id: notes
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BODY: ${{ github.event.release.body }}
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          if [ "$EVENT_NAME" = "release" ] && [ -n "$BODY" ]; then
+            printf '%s' "$BODY" > notes.md
+          else
+            # Pull the matching section out of CHANGELOG.md
+            awk -v v="$VERSION" '
+              /^## \[/ { if (found) exit; found = index($0, "[" v "]") > 0; next }
+              found { print }
+            ' CHANGELOG.md > notes.md
+          fi
+          echo "chars=$(wc -c < notes.md)"
+
+      - name: Notify Devin
+        env:
+          DEVIN_WEBHOOK_URL: ${{ secrets.DEVIN_WEBHOOK_URL }}
+          DEVIN_WEBHOOK_SECRET: ${{ secrets.DEVIN_WEBHOOK_SECRET }}
+          VERSION: ${{ steps.ver.outputs.version }}
+          PREVIOUS: ${{ steps.ver.outputs.previous }}
+          RELEASE_URL: ${{ github.event.release.html_url }}
+        run: |
+          if [ -z "$DEVIN_WEBHOOK_URL" ]; then
+            echo "::warning::DEVIN_WEBHOOK_URL not set; skipping Devin notification"
+            exit 0
+          fi
+          jq -n \
+            --arg event "package_released" \
+            --arg group_id "com.acme" \
+            --arg artifact_id "pricing" \
+            --arg version "$VERSION" \
+            --arg previous_version "$PREVIOUS" \
+            --arg repo "$GITHUB_REPOSITORY" \
+            --arg release_url "${RELEASE_URL:-https://github.com/$GITHUB_REPOSITORY/releases/tag/v$VERSION}" \
+            --arg registry "https://maven.pkg.github.com/$GITHUB_REPOSITORY" \
+            --arg triggered_by "$GITHUB_ACTOR" \
+            --rawfile release_notes notes.md \
+            '{event: $event, package: {group_id: $group_id, artifact_id: $artifact_id, version: $version, previous_version: $previous_version, registry: $registry},
+              repo: $repo, release_url: $release_url, release_notes: $release_notes, triggered_by: $triggered_by}' > payload.json
+          cat payload.json
+          curl --fail-with-body -sS -X POST "$DEVIN_WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            -H "X-Webhook-Secret: $DEVIN_WEBHOOK_SECRET" \
+            --data @payload.json
