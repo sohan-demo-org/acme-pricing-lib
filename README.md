@@ -6,7 +6,7 @@ Shared pricing engine for Acme services, published as `com.acme:pricing` to GitH
 <dependency>
   <groupId>com.acme</groupId>
   <artifactId>pricing</artifactId>
-  <version>1.0.0</version>
+  <version>2.0.0</version>
 </dependency>
 ```
 
@@ -17,8 +17,9 @@ Consumers: [acme-checkout-service](https://github.com/sohan-demo-org/acme-checko
 
 ```java
 PricingEngine engine = new PricingEngine();
-List<LineItem> items = List.of(new LineItem("SKU-1", new BigDecimal("19.99"), 2));
-BigDecimal total = engine.calculateTotal(items, TaxRules.rateFor("US-CA"), DiscountCode.percent("TEN", BigDecimal.TEN));
+List<LineItem> items = List.of(new LineItem("SKU-1", new BigDecimal("19.99"), "USD", 2));
+PriceBreakdown breakdown = engine.calculateTotal(items, TaxRules.rateFor("US-CA"), DiscountCode.percent("TEN", BigDecimal.TEN));
+BigDecimal total = breakdown.total();
 ```
 
 ## Releasing
