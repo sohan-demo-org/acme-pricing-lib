@@ -44,7 +44,7 @@ BigDecimal total    = engine.calculateTotal(items,
 - `PricingEngine` — `subtotal`, `applyDiscount`, `calculateTotal` (discount first, then tax, HALF_UP to cents)
 - `LineItem` — sku, unit price, quantity (validated)
 - `DiscountCode` — `percent(code, pct)` or `fixed(code, amount)`
-- `TaxRules` — region → tax rate (`US-CA`, `US-NY`, `US-TX`, `EU-DE`, `EU-FR`, `UK`, …)
+- `TaxRules` — region → tax rate (`US-CA`, `US-NY`, `US-TX`, `US-OR`, `GB`, `DE`)
 
 See [CHANGELOG.md](CHANGELOG.md) for version history and migration notes.
 
