@@ -12,8 +12,10 @@ GitHub Release (or "Run workflow")  →  release.yml: mvn verify + deploy to Git
 ```
 
 ## One-time setup (already done)
-- Repo secrets on this repo: `DEVIN_WEBHOOK_URL`, `DEVIN_WEBHOOK_SECRET` (from the Devin Automation).
-- Devin org secrets: `GH_PACKAGES_USER`, `GH_PACKAGES_TOKEN` (PAT with `read:packages`) so sessions can resolve the jar.
+- Actions secrets on this repo: `DEVIN_WEBHOOK_URL`, `DEVIN_WEBHOOK_SECRET` (from the Devin Automation).
+- Org-level Actions secret `GH_PACKAGES_TOKEN` (classic PAT, `read:packages`): the GitHub Packages Maven registry is
+  repo-scoped, so the consumers' CI cannot read the jar with their own `GITHUB_TOKEN`.
+- Devin org secret `GH_PACKAGES_TOKEN` (same PAT) so the upgrade sessions can resolve the jar.
 - Devin Automation "acme-pricing-lib release → upgrade consumers" (webhook trigger, run as Organization).
 
 ## On the call (≈ 10 min)
